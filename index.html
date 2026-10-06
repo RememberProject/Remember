@@ -34,17 +34,21 @@ h2{font-size:18px;margin:26px 0 8px}
 .edit textarea{height:70px;font-size:17px;padding:10px;margin-bottom:8px}.lbl{display:block;font-size:14px;color:var(--mute);margin:4px 0}.edit input{font:inherit;width:100%;padding:10px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink)}.acts .go{background:var(--acc);color:var(--accink)}
 .snz{display:inline-flex;gap:6px;align-items:center}.sn{font:inherit;font-size:14px;padding:5px 8px;border-radius:10px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink)}
 #auth input{display:block;width:100%;font:inherit;padding:12px;margin-bottom:10px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink)}
+.item p{font-weight:600}.meta{font-size:14px;color:var(--mute);margin-top:3px}.meta span{font-weight:600;color:var(--ink);margin-right:8px}.meta a{color:inherit}.meta i{font-size:13px}
+#q{display:block;width:100%;font:inherit;padding:12px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink)}
+details summary{cursor:pointer}.cmp>summary{font-size:18px;font-weight:700;margin:26px 0 8px}.day{margin:4px 0 4px 6px}.day>summary{padding:6px 0;color:var(--mute);font-weight:600}.edit .ep{font:inherit;width:100%;padding:10px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink)}
 .empty{color:var(--mute);padding:6px 2px}
 </style></head><body><main>
 <div id="auth"><h1>Remember</h1><p class="sub">Sign in to sync your reminders.</p><input id="em" type="email" placeholder="Email" autocomplete="email" aria-label="Email"><input id="pw" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" aria-label="Password"><div class="chips"><button class="go" id="si">Sign in</button><button id="su">Create account</button></div><div class="hint" id="amsg"></div></div>
 <div id="app" style="display:none">
 <h1>Remember</h1>
-<p class="sub">Write it like you'd say it. We catch the time and remind you.</p>
+<p class="sub">Write it like you'd say it. We catch the time and place. Or just jot a thought.</p>
 <div id="alert"></div>
 <div id="pushbar" style="display:none;margin-bottom:14px"></div>
-<textarea id="t" placeholder="Call Ben tomorrow at 3pm" aria-label="What do you need to remember?"></textarea>
+<textarea id="t" placeholder="" aria-label="What do you need to remember?"></textarea>
 <div class="hint" id="hint" aria-live="polite"></div>
-<div class="chips"><button class="go" id="save">Save</button><button class="none" id="plain">Just save</button></div>
+<div class="chips"><button class="go" id="save">Save + remind</button><button id="plain">Jot a thought</button></div>
+<input id="q" type="search" placeholder="Search reminders and thoughts" aria-label="Search" style="margin-top:22px">
 <div id="lists"></div>
 <div class="hint" id="err"></div><p style="text-align:center;margin-top:30px"><button id="so" style="font-size:14px;padding:5px 12px;border-width:1.5px">Sign out</button></p></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -85,46 +89,62 @@ if(amb&&h<12){var a=mk(h),p=mk(h+12);at=(!day||dayKind==='today')?(a>now?a:p>now
 else at=mk(h);
 if(at<=now){if(!day||dayKind==='today')at=new Date(at.getTime()+864e5);else if(dayKind==='date')at.setFullYear(at.getFullYear()+1);else if(dayKind==='week')at.setDate(at.getDate()+7)}
 return {at:at.getTime(),loose:lw}}
-function submit(auto){var v=$('t').value.trim();if(!v){$('t').focus();return}
-var r=auto?parse(v):null;
-items.unshift({id:crypto.randomUUID(),text:v,at:r?r.at:null,loose:r?!!r.loose:false,done:false,fired:false});
-$('t').value='';$('hint').textContent='';save();render();if(r)askPerm();$('t').focus()}
-$('save').addEventListener('click',function(){submit(true)});
-$('plain').addEventListener('click',function(){submit(false)});
-$('t').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit(true)}});
-$('t').addEventListener('input',function(){var r=parse(this.value);$('hint').textContent=this.value.trim()?(r?'Reminder set for '+fmt(r.at):'No time found, saves as a note'):''});
+var ADDR=/(?:\b(?:at|@)\s+)?\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){1,4}(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|way|pl|place|pkwy|parkway|hwy|highway|cir|circle|ter|terrace)\b\.?(?:,\s*[A-Za-z .]+,\s*[A-Z]{2}\b(?:\s+\d{5})?)?/i;
+var TIMEX=/\b(?:(?:at|on|by|this|next)\s+)?(?:in (?:\d+(?:\.\d+)?|an?|half an?) *(?:minutes?|mins?|hours?|hrs?|days?|weeks?)|\d{1,2}(?::\d{2})? ?(?:a\.?m\.?|p\.?m\.?)(?![a-z])|\d{1,2}:\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2}(?:st|nd|rd|th)?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|tomorrow|tmrw|today|tonight|noon|midnight|morning|afternoon|evening|(?:sun|mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?)(?:day)?)\b/gi;
+function stripTime(t){return t.replace(TIMEX,' ').replace(/\bat \d{1,2}(?::\d{2})?(?!\d)/gi,' ')}
+function cleanTitle(t){return t.replace(/\s{2,}/g,' ').replace(/(?:^|\s)(?:at|on|by|for|in|@)\s*$/i,'').replace(/^(?:at|on|by|for|in|@)\s+/i,'').replace(/^[\s,.;:-]+|[\s,.;:-]+$/g,'').trim()}
+function analyze(v){var am=v.match(ADDR),place=am?am[0].replace(/^(?:at|@)\s+/i,'').trim():null,rest=am?v.replace(am[0],' '):v,r=parse(rest);
+if(!r)return null;return {title:cleanTitle(stripTime(rest))||cleanTitle(rest)||v,place:place,at:r.at,loose:!!r.loose}}
+function submit(kind){var v=$('t').value.trim();if(!v){$('t').focus();return}
+var it={id:crypto.randomUUID(),text:v,place:null,at:null,loose:false,done:false,doneAt:null};
+if(kind==='remind'){var a=analyze(v);if(!a){$('hint').textContent='No time found. Add one like "at 3pm" or "tomorrow", or tap Jot a thought.';return}it.text=a.title;it.place=a.place;it.at=a.at;it.loose=a.loose}
+items.unshift(it);$('t').value='';$('hint').textContent='';save();render();if(kind==='remind')askPerm();$('t').focus()}
+$('save').addEventListener('click',function(){submit('remind')});
+$('plain').addEventListener('click',function(){submit('thought')});
+$('t').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit('remind')}});
+$('t').addEventListener('input',function(){var v=this.value.trim(),a=v?analyze(v):null;
+$('hint').textContent=!v?'':a?'Reminder: '+fmt(a.at)+(a.place?'  |  Place: '+a.place:''):'No time found yet. "Jot a thought" saves it as written.'});
+$('q').addEventListener('input',function(){render()});
 function askPerm(){try{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission()}catch(e){}}
+var cmpOpen=false,openDays={};
 function toLocal(ts){var d=new Date(ts-new Date(ts).getTimezoneOffset()*6e4);return d.toISOString().slice(0,16)}
-function row(it,due){
-if(it.id===editing)return '<div class="item edit" data-id="'+it.id+'"><textarea class="et" aria-label="Edit text">'+esc(it.text)+'</textarea><label class="lbl">Remind me at (leave empty for a plain note)</label><input type="datetime-local" class="ed" value="'+(it.at?toLocal(it.at):'')+'"><div class="acts"><button class="go" data-a="save">Save</button><button data-a="clr">Clear time</button><button data-a="cancel">Cancel</button></div></div>';
+function mapUrl(p){var q=encodeURIComponent(p);return /iPhone|iPad|Macintosh/.test(navigator.userAgent)?'https://maps.apple.com/?q='+q:'https://www.google.com/maps/search/?api=1&query='+q}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 var opts='<option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option><option value="4">4 hours</option><option value="5">5 hours</option><option value="8">8 hours</option>';
-var acts=due?'<button class="go" data-a="done">Done</button><span class="snz"><select class="sn" aria-label="Snooze for">'+opts+'</select><button data-a="snooze">Snooze</button></span>':'<button data-a="done">Done</button><button data-a="edit">'+(it.at?'Edit':'Edit / add reminder')+'</button><button data-a="del">Delete</button>';
-return '<div class="item'+(due?' due':'')+'" data-id="'+it.id+'"><p>'+esc(it.text)+'</p><div class="when">'+(it.at?fmt(it.at)+(it.loose?' (estimated, tap Edit to adjust)':''):'No reminder')+'</div><div class="acts">'+acts+'</div></div>'}
-function esc(s){return s.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function card(it,due){
+if(it.id===editing)return '<div class="item edit" data-id="'+it.id+'"><textarea class="et" aria-label="Edit text">'+esc(it.text)+'</textarea><label class="lbl">When (leave empty for a thought)</label><input type="datetime-local" class="ed" value="'+(it.at?toLocal(it.at):'')+'"><label class="lbl">Where</label><input type="text" class="ep" value="'+esc(it.place||'')+'" placeholder="Address or place"><div class="acts"><button class="go" data-a="save">Save</button><button data-a="clr">Clear time</button><button data-a="cancel">Cancel</button></div></div>';
+var meta=(it.at?'<div class="meta"><span>When</span>'+fmt(it.at)+(it.loose?' <i>(estimated, tap Edit to adjust)</i>':'')+'</div>':'')+(it.place?'<div class="meta"><span>Where</span><a href="'+mapUrl(it.place)+'" target="_blank" rel="noopener">'+esc(it.place)+'</a></div>':'');
+var acts=due?'<button class="go" data-a="done">Done</button><span class="snz"><select class="sn" aria-label="Snooze for">'+opts+'</select><button data-a="snooze">Snooze</button></span>':'<button data-a="done">Done</button><button data-a="edit">'+(it.at?'Edit':'Edit / add time')+'</button><button data-a="del">Delete</button>';
+return '<div class="item'+(due?' due':'')+'" data-id="'+it.id+'"><p>'+esc(it.text)+'</p>'+meta+'<div class="acts">'+acts+'</div></div>'}
+function doneRow(it){return '<div class="item" data-id="'+it.id+'"><p style="text-decoration:line-through;color:var(--mute)">'+esc(it.text)+'</p>'+(it.place?'<div class="meta"><span>Where</span>'+esc(it.place)+'</div>':'')+'<div class="acts"><button data-a="undo">Undo</button><button data-a="del">Delete</button></div></div>'}
+function matches(it){var q=($('q').value||'').trim().toLowerCase();if(!q)return true;var hay=((it.text||'')+' '+(it.place||'')).toLowerCase();return q.split(/\s+/).every(function(w){return hay.indexOf(w)>-1})}
+function dayLabel(ms){if(!ms)return 'Earlier';var d=new Date(ms),n=new Date(),y=new Date(n.getTime()-864e5);return d.toDateString()===n.toDateString()?'Today':d.toDateString()===y.toDateString()?'Yesterday':d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})}
 function render(){
-var now=Date.now(),open=items.filter(function(i){return !i.done}),
+var now=Date.now(),q=($('q').value||'').trim(),all=items.filter(matches),open=all.filter(function(i){return !i.done}),
 due=open.filter(function(i){return i.at&&i.at<=now}),
 soon=open.filter(function(i){return i.at&&i.at>now}).sort(function(a,b){return a.at-b.at}),
-loose=open.filter(function(i){return !i.at}),
-done=items.filter(function(i){return i.done}).slice(0,5),h='';
-if(due.length)h+='<h2>Needs you now</h2>'+due.map(function(i){return row(i,1)}).join('');
-if(soon.length)h+='<h2>Coming up</h2>'+soon.map(function(i){return row(i)}).join('');
-if(loose.length)h+='<h2>Saved, no reminder</h2>'+loose.map(function(i){return row(i)}).join('');
-if(!open.length)h+='<p class="empty">Nothing to remember right now. Your head is clear.</p>';
-if(done.length)h+='<h2>Done</h2>'+done.map(function(i){return '<div class="item"><p style="text-decoration:line-through;color:var(--mute)">'+esc(i.text)+'</p><div class="acts"><button data-a="undo" data-id="'+i.id+'">Undo</button></div></div>'}).join('');
+thoughts=open.filter(function(i){return !i.at}),
+dn=all.filter(function(i){return i.done}).sort(function(a,b){return (b.doneAt||0)-(a.doneAt||0)}),h='';
+if(due.length)h+='<h2>Needs you now</h2>'+due.map(function(i){return card(i,1)}).join('');
+if(soon.length)h+='<h2>Reminders</h2>'+soon.map(function(i){return card(i)}).join('');
+if(thoughts.length)h+='<h2>Thoughts</h2>'+thoughts.map(function(i){return card(i)}).join('');
+if(!open.length)h+='<p class="empty">'+(q?'No matches.':'Nothing to remember right now. Your head is clear.')+'</p>';
+if(dn.length){var g={},order=[];dn.forEach(function(i){var k=i.doneAt?new Date(i.doneAt).toDateString():'earlier';if(!g[k]){g[k]=[];order.push(k)}g[k].push(i)});
+h+='<details class="cmp" data-k="cmp"'+((cmpOpen||q)?' open':'')+'><summary>Completed ('+dn.length+')</summary>'+order.map(function(k){return '<details class="day" data-k="'+k+'"'+((openDays[k]||q)?' open':'')+'><summary>'+dayLabel(g[k][0].doneAt)+' ('+g[k].length+')</summary>'+g[k].map(doneRow).join('')+'</details>'}).join('')+'</details>'}
 $('lists').innerHTML=h;check()}
+$('lists').addEventListener('toggle',function(e){var d=e.target,k=d.dataset&&d.dataset.k;if(!k)return;if(k==='cmp')cmpOpen=d.open;else openDays[k]=d.open},true);
 $('lists').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
-var el=b.closest('.item'),id=(b.dataset.id||el.dataset.id),it=items.filter(function(i){return i.id===id})[0];if(!it)return;
+var el=b.closest('.item'),id=el.dataset.id,it=items.filter(function(i){return i.id===id})[0];if(!it)return;
 var a=b.dataset.a;
 if(a==='edit'){editing=id;render();var t=document.querySelector('.et');if(t)t.focus();return}
 if(a==='cancel'){editing=null;render();return}
 if(a==='clr'){el.querySelector('.ed').value='';return}
-if(a==='save'){var v=el.querySelector('.et').value.trim(),dv=el.querySelector('.ed').value;
-if(v)it.text=v;if(dv){var ts=new Date(dv).getTime();if(ts!==it.at){it.at=ts;it.fired=false}it.loose=false}else{it.at=null;it.loose=false}
+if(a==='save'){var v=el.querySelector('.et').value.trim(),dv=el.querySelector('.ed').value,pv=el.querySelector('.ep').value.trim();
+if(v)it.text=v;it.place=pv||null;if(dv){var ts=new Date(dv).getTime();it.at=ts;it.loose=false}else{it.at=null;it.loose=false}
 editing=null;save();render();return}
-if(a==='done')it.done=true;else if(a==='undo')it.done=false;
-else if(a==='snooze'){var hrs=+el.querySelector('.sn').value||1;it.at=Date.now()+hrs*36e5;it.fired=false;it.loose=false}
-else if(a==='del'){items=items.filter(function(i){return i.id!==id});sb.from('reminders').delete().eq('id',id).then(function(r){if(r.error)$('err').textContent='Could not delete: '+r.error.message})};
+if(a==='done'){it.done=true;it.doneAt=Date.now()}else if(a==='undo'){it.done=false;it.doneAt=null}
+else if(a==='snooze'){var hrs=+el.querySelector('.sn').value||1;it.at=Date.now()+hrs*36e5;it.loose=false}
+else if(a==='del'){items=items.filter(function(i){return i.id!==id});sb.from('reminders').delete().eq('id',id).then(function(r){if(r.error)$('err').textContent='Could not delete: '+r.error.message})}
 save();render()});
 function check(){
 var now=Date.now(),fresh=items.filter(function(i){return !i.done&&i.at&&i.at<=now&&!i.fired}),
@@ -136,8 +156,8 @@ else{box.style.display='none';document.title='Remember'}}
 setInterval(function(){if(editing!==null){check();return}var had=document.querySelectorAll('.item.due').length;check();
 if(items.some(function(i){return !i.done&&i.at&&i.at<=Date.now()})!==(had>0))render()},15000);
 var sb=supabase.createClient('https://ltkkrdonmslmwusqnpgz.supabase.co','sb_publishable_rmWbFLof8kL-xEnntM5erw_72DnhRLw');
-function toRow(i){return {id:i.id,text:i.text,remind_at:i.at?new Date(i.at).toISOString():null,loose:!!i.loose,done:!!i.done}}
-function fromRow(r){return {id:r.id,text:r.text,at:r.remind_at?new Date(r.remind_at).getTime():null,loose:r.loose,done:r.done,fired:r.fired}}
+function toRow(i){return {id:i.id,text:i.text,place:i.place||null,remind_at:i.at?new Date(i.at).toISOString():null,loose:!!i.loose,done:!!i.done,completed_at:i.doneAt?new Date(i.doneAt).toISOString():null}}
+function fromRow(r){return {id:r.id,text:r.text,place:r.place,at:r.remind_at?new Date(r.remind_at).getTime():null,loose:r.loose,done:r.done,doneAt:r.completed_at?new Date(r.completed_at).getTime():null}}
 function save(){if(!uid)return;sb.from('reminders').upsert(items.map(toRow)).then(function(r){$('err').textContent=r.error?'Could not save: '+r.error.message:''})}
 function load(){return sb.from('reminders').select('*').order('created_at',{ascending:false}).then(function(r){if(r.error){$('err').textContent='Could not load: '+r.error.message;return}items=r.data.map(fromRow);if(editing===null)render()})}
 function show(sess){uid=sess?sess.user.id:null;$('auth').style.display=uid?'none':'block';$('app').style.display=uid?'block':'none';if(uid){load();checkPush()}}
