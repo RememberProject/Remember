@@ -41,6 +41,7 @@ h2{font-size:18px;margin:26px 0 8px}
 <h1>Remember</h1>
 <p class="sub">Write it like you'd say it. We catch the time and remind you.</p>
 <div id="alert"></div>
+<div id="pushbar" style="display:none;margin-bottom:14px"></div>
 <textarea id="t" placeholder="Call Ben tomorrow at 3pm" aria-label="What do you need to remember?"></textarea>
 <div class="hint" id="hint" aria-live="polite"></div>
 <div class="chips"><button class="go" id="save">Save</button><button class="none" id="plain">Just save</button></div>
@@ -128,18 +129,18 @@ save();render()});
 function check(){
 var now=Date.now(),fresh=items.filter(function(i){return !i.done&&i.at&&i.at<=now&&!i.fired}),
 over=items.filter(function(i){return !i.done&&i.at&&i.at<=now}),box=$('alert');
-fresh.forEach(function(i){i.fired=true;try{if('Notification' in window&&Notification.permission==='granted')new Notification('Remember',{body:i.text})}catch(e){}});
-if(fresh.length)save();
+
+
 if(over.length){box.style.display='block';box.innerHTML=over.length+(over.length>1?' reminders are':' reminder is')+' due: '+esc(over.map(function(i){return i.text}).join(', ').slice(0,120));document.title='('+over.length+') Remember'}
 else{box.style.display='none';document.title='Remember'}}
 setInterval(function(){if(editing!==null){check();return}var had=document.querySelectorAll('.item.due').length;check();
 if(items.some(function(i){return !i.done&&i.at&&i.at<=Date.now()})!==(had>0))render()},15000);
 var sb=supabase.createClient('https://ltkkrdonmslmwusqnpgz.supabase.co','sb_publishable_rmWbFLof8kL-xEnntM5erw_72DnhRLw');
-function toRow(i){return {id:i.id,text:i.text,remind_at:i.at?new Date(i.at).toISOString():null,loose:!!i.loose,done:!!i.done,fired:!!i.fired}}
+function toRow(i){return {id:i.id,text:i.text,remind_at:i.at?new Date(i.at).toISOString():null,loose:!!i.loose,done:!!i.done}}
 function fromRow(r){return {id:r.id,text:r.text,at:r.remind_at?new Date(r.remind_at).getTime():null,loose:r.loose,done:r.done,fired:r.fired}}
 function save(){if(!uid)return;sb.from('reminders').upsert(items.map(toRow)).then(function(r){$('err').textContent=r.error?'Could not save: '+r.error.message:''})}
 function load(){return sb.from('reminders').select('*').order('created_at',{ascending:false}).then(function(r){if(r.error){$('err').textContent='Could not load: '+r.error.message;return}items=r.data.map(fromRow);if(editing===null)render()})}
-function show(sess){uid=sess?sess.user.id:null;$('auth').style.display=uid?'none':'block';$('app').style.display=uid?'block':'none';if(uid)load()}
+function show(sess){uid=sess?sess.user.id:null;$('auth').style.display=uid?'none':'block';$('app').style.display=uid?'block':'none';if(uid){load();checkPush()}}
 function auth(kind){var c={email:$('em').value.trim(),password:$('pw').value};$('amsg').textContent='';
 (kind==='in'?sb.auth.signInWithPassword(c):sb.auth.signUp(c)).then(function(r){if(r.error)$('amsg').textContent=r.error.message;else if(!r.data.session)$('amsg').textContent='Check your email to confirm, then sign in.'})}
 $('si').addEventListener('click',function(){auth('in')});$('su').addEventListener('click',function(){auth('up')});
@@ -147,5 +148,17 @@ $('so').addEventListener('click',function(){sb.auth.signOut()});
 sb.auth.getSession().then(function(r){show(r.data.session)});
 sb.auth.onAuthStateChange(function(ev,sess){if(ev==='SIGNED_OUT')show(null);else if(ev==='SIGNED_IN'&&!uid)show(sess)});
 document.addEventListener('visibilitychange',function(){if(!document.hidden&&uid&&editing===null)load()});
+var VAPID='BFfNV1mdk0LEJkELAckTdxTfdQLHc-9flMgMwJ9GYSLKt2BImuDO-T1yK4zpARy_0yz1d97XbkIouiAozKAbYrk';
+function b64(u){var r=atob((u+'='.repeat((4-u.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o}
+function checkPush(){var bar=$('pushbar');
+if(!('PushManager' in window)||!('Notification' in window)){bar.style.display='block';bar.innerHTML='<p class="hint">To get alerts, open Remember from your Home Screen icon (Share, then Add to Home Screen).</p>';return}
+navigator.serviceWorker.ready.then(function(reg){return reg.pushManager.getSubscription()}).then(function(sub){
+if(sub&&Notification.permission==='granted'){bar.style.display='none';return}
+bar.style.display='block';bar.innerHTML='<button class="go" id="pushbtn">Turn on alerts</button>';$('pushbtn').onclick=enablePush})}
+function enablePush(){Notification.requestPermission().then(function(p){
+if(p!=='granted'){$('err').textContent='Alerts are blocked. Allow notifications for Remember in your phone settings.';return}
+return navigator.serviceWorker.ready.then(function(reg){return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)})}).then(function(sub){
+var j=sub.toJSON();return sb.from('push_subscriptions').delete().eq('subscription->>endpoint',j.endpoint).then(function(){return sb.from('push_subscriptions').insert({subscription:j})})}).then(function(r){
+if(r&&r.error)$('err').textContent='Could not turn on alerts: '+r.error.message;else{$('err').textContent='';checkPush()}})}).catch(function(e){$('err').textContent='Could not turn on alerts: '+e.message})}
 try{if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js')}catch(e){}
 </script></body></html>
